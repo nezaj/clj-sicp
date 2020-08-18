@@ -1,0 +1,7 @@
+# Intellij
+.idea/
+clj-sicp.iml
+
+# misc
+.DS_Store
+.cpcache/

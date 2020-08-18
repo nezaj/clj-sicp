@@ -1,0 +1,4 @@
+{:paths ["src"]
+ :deps {}
+ :aliases {:socket
+           {:jvm-opts ["-Dclojure.server.repl={:port,50505,:accept,clojure.core.server/repl}"]}}}
