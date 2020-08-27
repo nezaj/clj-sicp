@@ -255,6 +255,22 @@
   (= (encode sample-tree sample-message) sample-bits))
 
 ; 2.69
+;; We're not _100%_ sure this is actually valid huffman encoding
+;; Mainly because we go from biggest to smallest, rather then smallest
+;; to biggest. We don't know if this has different characters to expected
+;; path length
+(defn generate-huffman-tree [pairs]
+  (letfn [(generate-helper [branches]
+            (if (<= (count branches) 1)
+              (first branches)
+              (make-code-tree
+                (first branches)
+                (generate-helper (rest branches)))))]
+    (generate-helper (->> pairs
+                          (map (partial apply make-leaf))
+                          (sort-by weight)
+                          reverse))))
+
 ; 2.73 abd
 ; 2.74
 ; 2.75
