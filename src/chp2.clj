@@ -110,3 +110,57 @@
        (repeat 3)
        generate-perms
        (filter (fn [t] (= (apply + t) k)))))
+
+; 2.42
+
+(defn combination [xs ys]
+  (for [x xs y ys] [x y]))
+
+(defn all-positions [board-size]
+  (combination (range board-size) (range board-size)))
+
+(defn can-kill? [[x1 y1] [x2 y2]]
+  (or
+    (= x1 x2)                                               ; horizontal
+    (= y1 y2)                                               ; vertical
+    (= (Math/abs (- x1 x2)) (Math/abs (- y1 y2)))))         ; diag
+
+(defn safe? [positions candidate]
+  (not (some #(can-kill? % candidate) positions)))
+
+(defn queens [board-size num-queens]
+  (condp = num-queens
+    1 (map (partial conj #{}) (all-positions board-size))
+    (let [prev-solutions (queens board-size (dec num-queens))
+          candidates (all-positions board-size)]
+      (->> (combination prev-solutions candidates)
+           (filter (partial apply safe?))
+           (map (partial apply conj))))))
+
+(defn print-positions [board-size positions]
+  (println "---------")
+  (->> (range board-size)
+       (map (fn [x]
+              (map (fn [y]
+                     (if (positions [x y])
+                       "X"
+                       "_"))
+                   (range board-size))))
+       (run! println)))
+
+; 2.53
+; 2.55
+; 2.59
+; 2.60
+; 2.61
+; 2.62
+; 2.67
+; 2.68
+; 2.69
+; 2.73 abd
+; 2.74
+; 2.75
+; 2.76
+; 2.77
+; 2.82
+; 2.86
