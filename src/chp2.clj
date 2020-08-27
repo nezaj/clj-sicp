@@ -233,8 +233,6 @@
               (= [symbol] (symbols branch))
               path
 
-              (leaf? branch)
-              nil
               :else
               (let [left (left-branch branch)
                     right (right-branch branch)]
@@ -242,15 +240,10 @@
                   (and left (encode-symbol-helper symbol (conj path 0) left))
                   (and right (encode-symbol-helper symbol (conj path 1) right))))))
           (encode-symbol [symbol]
-            (let [res (encode-symbol-helper symbol [] tree)]
-              (if res
-                res
-                (throw (Exception. (format "Uh oh, couldn't find symbol = %s" symbol))))))
-          (encode-helper [message res]
-            (if (not (seq message))
+            (if-let [res (encode-symbol-helper symbol [] tree)]
               res
-              (encode-helper (rest message) (concat res (encode-symbol (first message))))))]
-    (encode-helper message [])))
+              (throw (Exception. (format "Uh oh, couldn't find symbol = %s" symbol)))))]
+    (mapcat encode-symbol message)))
 
 (comment
   (def sample-tree (make-code-tree (make-leaf 'A 4)
