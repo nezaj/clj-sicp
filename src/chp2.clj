@@ -255,11 +255,12 @@
   (= (encode sample-tree sample-message) sample-bits))
 
 ; 2.69
-;; We're not _100%_ sure this is actually valid huffman encoding
-;; Mainly because we go from biggest to smallest, rather then smallest
-;; to biggest. We don't know if this has different characters to expected
-;; path length
-(defn generate-huffman-tree [pairs]
+;; Our initial implementation went from higher to lower
+;; This ends up producing an unbalanced tree though,
+;; which can become costly. i.e 5 1 1 1 1 will produce
+;; a right-leaning tree, while in huffman it will be balanced
+
+(defn generate-huffman-tree-right-leaning [pairs]
   (letfn [(generate-helper [branches]
             (if (<= (count branches) 1)
               (first branches)
@@ -271,10 +272,81 @@
                           (sort-by weight)
                           reverse))))
 
+(defn generate-huffman-tree [pairs]
+  (letfn [(generate-helper [branches]
+            (if (<= (count branches) 1)
+              (first branches)
+              (let [sorted (sort-by weight branches)
+                    [heavier lighter] (reverse (take 2 sorted))
+                    next (drop 2 sorted)]
+                (generate-helper
+                  (conj
+                    next
+                    (make-code-tree heavier lighter))))))]
+    (generate-helper (map (partial apply make-leaf) pairs))))
+
+(comment
+  (def pairs '([A 5] [B 2] [C 1] [D 1] [E 1]))
+  (generate-huffman-tree pairs))
+
 ; 2.73 abd
-; 2.74
+(defn variable? [expr] (symbol? expr))
+(defn same-variable? [a b] (and (variable? a) (= a b)))
+(defn operator [expr] (first expr))
+(defn operands [expr] (rest expr))
+(defn make-sum [a b] (list '+ a b))
+(defn make-product [a b] (list '* a b))
+
+(def deriv-fns (atom {}))
+(defn install-operator [operator fn]
+  (swap! deriv-fns #(assoc % operator fn)))
+
+(defn deriv [expr var]
+  (cond
+    (number? expr)
+    0
+
+    (variable? expr)
+    (if (same-variable? expr var) 1 0)
+
+    :else
+      ((get @deriv-fns (operator expr))
+           (operands expr) var)))
+
+(defn multiplier [operands] (first operands))
+(defn multiplicand [operands] (second operands))
+(defn deriv-product [operands var]
+  (make-sum
+    (make-product
+      (multiplier operands)
+      (deriv (multiplicand operands) var))
+    (make-product
+      (multiplicand operands)
+      (deriv (multiplier operands) var))))
+
+(defn install-deriv-product []
+  (install-operator '* deriv-product))
+
+(defn left [operands] (first operands))
+(defn right [operands] (second operands))
+(defn deriv-sum [operands var]
+  (make-sum
+    (deriv (left operands) var)
+    (deriv (right operands) var)))
+
+(defn install-deriv-sum []
+  (install-operator '+ deriv-sum))
+
+(comment
+  (do (install-deriv-product)
+      (install-deriv-sum))
+  (deriv '(* 2 x) 'x)
+  (deriv '(+ x x) 'x)
+  (deriv '(* 2 x) 'y))
+
 ; 2.75
-; 2.76
-; 2.77
-; 2.82
-; 2.86
+(defn make-from-mag-ang [mag ang]
+  (fn [op]
+    (condp = op
+      'magnitude mag
+      'angle ang)))
