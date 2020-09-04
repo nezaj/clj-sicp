@@ -130,7 +130,7 @@
       the-semaphore)))
 
 (defmacro my-delay [& forms]
-  (list* 'fn [] forms))
+  `(fn [] ~@forms))
 
 (defn my-force [f]
   (f))
