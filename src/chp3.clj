@@ -187,19 +187,26 @@
 ; 3.56
 (defn scale-stream [s factor] (map-stream (partial * factor) s))
 
-(defn merge-stream [s1 s2]
-  (cond
-    (nil-stream? s1) s2
-    (nil-stream? s2) s1
+(defn merge-stream
+  ([s1 s2] (merge-stream (fn [x] x) s1 s2))
+  ([weight-fn s1 s2 ]
+   (cond
+     (nil-stream? s1) s2
+     (nil-stream? s2) s1
 
-    :else
-    (let [s1-car (car-stream s1)
-          s2-car (car-stream s2)]
-      (cond
-        (< s1-car s2-car) (cons-stream s1-car (merge-stream (cdr-stream s1) s2))
-        (< s2-car s1-car) (cons-stream s2-car (merge-stream (cdr-stream s2) s1))
-        :else
-        (cons-stream s1-car (merge-stream (cdr-stream s1) (cdr-stream s2)))))))
+     :else
+     (let [s1-car (car-stream s1)
+           s2-car (car-stream s2)
+           s1-w (weight-fn s1-car)
+           s2-w (weight-fn s2-car)]
+       (cond
+         (< s1-w s2-w) (cons-stream s1-car (merge-stream weight-fn (cdr-stream s1) s2))
+         (< s2-w s1-w) (cons-stream s2-car (merge-stream weight-fn (cdr-stream s2) s1))
+         :else
+         (cons-stream s1-car (merge-stream
+                               weight-fn
+                               (cdr-stream s1)
+                               (if (= s1-car s2-car) (cdr-stream s2) s2))))))))
 
 ; Numbers that exclusively have prime factors of 2, 3, and/or 5
 (def special-numbers (cons-stream 1 (merge-stream
@@ -225,14 +232,17 @@
 (defn interleave [s1 s2]
   (cons-stream (car-stream s1) (interleave s2 (cdr-stream s1))))
 
-(defn pairs [s1 s2]
-  (cons-stream
-    (list (car-stream s1) (car-stream s2))
-    (interleave
-      (map-stream
-        (fn [x] (list (car-stream s1) x))
-        (cdr-stream s2))
-      (pairs (cdr-stream s1) (cdr-stream s2)))))
+(defn pairs
+  ([s1 s2] (pairs (partial apply +) s1 s2))
+  ([weight-fn s1 s2]
+   (cons-stream
+     (list (car-stream s1) (car-stream s2))
+     (merge-stream
+       weight-fn
+       (map-stream
+         (fn [x] (list (car-stream s1) x))
+         (cdr-stream s2))
+       (pairs weight-fn (cdr-stream s1) (cdr-stream s2))))))
 
 (defn symmetric [s]
   (let [s-car (car-stream s)
@@ -253,13 +263,95 @@
     (->> (range 20)
          (map (fn [x] [x (ref-stream all-pairs-stream x)])))))
 
-; 3.68
-
 ; 3.69
+(defn triples [s1 s2 s3]
+  (cons-stream
+    (list (car-stream s1) (car-stream s2) (car-stream s3))
+    (interleave (map-stream
+                  (fn [x] (list* (car-stream s1) x))
+                  (cdr-stream (pairs s2 s3)))
+                (triples (cdr-stream s1) (cdr-stream s2) (cdr-stream s3)))))
+
+(comment
+  (do
+    (def triples-stream (triples integers integers integers))
+    (->> (range 20)
+         (map (fn [x] [x (ref-stream triples-stream x)])))))
+
+(defn filter-stream [p s]
+  (cond
+    (nil-stream? s) s
+
+    (p (car-stream s)) (cons-stream (car-stream s)
+                                    (filter-stream p (cdr-stream s)))
+
+    :else
+    (filter-stream p (cdr-stream s))))
+
+(def pyth-triples
+  (filter-stream (fn [[a b c]] (= (* c c)
+                                  (+ (* a a) (* b b))))
+                 (triples integers integers integers)))
+(comment
+  (->> (range 3)
+       (map (fn [x] [x (ref-stream pyth-triples x)]))))
+
 
 ; 3.70
 
+(def pairs-order-by-sum (pairs (partial apply +) integers integers))
+(comment
+  (->> (range 10)
+       (map (fn [x]
+              (let [res (ref-stream pairs-order-by-sum x)]
+                [(apply + res) res])))))
+
+(defn special-weight-fn [[i j]]
+  (+ (* 2 i)
+     (* 3 j)
+     (* 5 i j)))
+
+(def special-pairs
+  (filter-stream (partial
+                   every?
+                   (fn [x]
+                     (and (not= 0 (mod x 2))
+                          (not= 0 (mod x 3))
+                          (not= 0 (mod x 5)))))
+                 (pairs special-weight-fn
+                        integers integers)))
+
+(comment
+  (->> (range 10)
+       (map (fn [x]
+              (let [res (ref-stream special-pairs x)]
+                [(special-weight-fn res) res])))))
 ; 3.71
+
+(defn cube-weight [[x y]]
+  (+ (* x x x)
+     (* y y y)))
+
+(def pairs-ordered-by-cube (pairs cube-weight integers integers))
+
+(def ram-numbers
+  (let [ps (pairs cube-weight integers integers)]
+    (letfn
+      [(iter [s]
+         (let [curr (car-stream s)
+               next (car-stream (cdr-stream s))]
+           (if (= (cube-weight curr) (cube-weight next))
+             (cons-stream
+               (list curr next)
+               (iter (cdr-stream s)))
+             (iter (cdr-stream s)))))]
+      (iter ps))))
+
+(comment
+  (->> (range 10)
+       (map (fn [x]
+              (let [pairs (ref-stream ram-numbers x)]
+                [(map cube-weight pairs) pairs])))))
 
 ; 3.72
 
