@@ -129,15 +129,21 @@
                   (swap! cnt dec))))]
       the-semaphore)))
 
-(defmacro cons-stream [a b]
-  `[~a (delay ~b)])
+(defmacro my-delay [& forms]
+  (list* 'fn [] forms))
 
-(defn numbers-starting-from [n]
-  (cons-stream n (numbers-starting-from (+ 1 n))))
+(defn my-force [f]
+  (f))
+
+(defmacro cons-stream [a b]
+  `[~a (my-delay ~b)])
 
 (defn car-stream [s] (first s))
 (defn cdr-stream [s]
-  @(second s))
+  (my-force (second s)))
+
+(defn numbers-starting-from [n]
+  (cons-stream n (numbers-starting-from (+ 1 n))))
 
 (defn ref-stream [s n]
   (if (= n 0)
