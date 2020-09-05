@@ -229,8 +229,12 @@
     (iter (car-stream s) (cdr-stream s))))
 
 ; 3.67
-(defn interleave [s1 s2]
-  (cons-stream (car-stream s1) (interleave s2 (cdr-stream s1))))
+
+(defn interleave* [s1 delayed-s2]
+  (cons-stream (car-stream s1) (interleave* (my-force delayed-s2) (my-delay (cdr-stream s1)))))
+
+(defmacro interleave [s1 s2]
+  `(interleave* ~s1 (my-delay ~s2)))
 
 (defn pairs
   ([s1 s2] (pairs (partial apply +) s1 s2))
@@ -265,12 +269,10 @@
 
 ; 3.69
 (defn triples [s1 s2 s3]
-  (cons-stream
-    (list (car-stream s1) (car-stream s2) (car-stream s3))
-    (interleave (map-stream
-                  (fn [x] (list* (car-stream s1) x))
-                  (cdr-stream (pairs s2 s3)))
-                (triples (cdr-stream s1) (cdr-stream s2) (cdr-stream s3)))))
+  (interleave (map-stream
+                (fn [x] (list* (car-stream s1) x))
+                (pairs s2 s3))
+              (triples (cdr-stream s1) (cdr-stream s2) (cdr-stream s3))))
 
 (comment
   (do
