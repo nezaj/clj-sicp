@@ -356,14 +356,61 @@
                 [(map cube-weight pairs) pairs])))))
 
 ; 3.72
+(defn partition-stream [f s]
+  (letfn [(iter [acc s]
+            (let [curr (car-stream s)
+                  prev (last acc)]
+              (if (f prev curr)
+                (iter (conj acc curr) (cdr-stream s))
+                (cons-stream acc (iter [curr] (cdr-stream s))))))]
+    (iter [(car-stream s)] (cdr-stream s))))
+(defn square-weight [[a b]] (+ (* a a) (* b b)))
 
-; 3.77
+(def triple-squares (filter-stream
+                      #(>= (count %) 3)
+                      (partition-stream
+                        (fn [prev curr] (= (square-weight prev)
+                                           (square-weight curr)))
+                        (pairs square-weight integers integers))))
 
-; 3.78
+(comment
+  (->> (range 10)
+       (map (fn [x]
+              (let [pairs (ref-stream triple-squares x)]
+                [(map square-weight pairs) pairs])))))
 
-; 3.79
+(def ram-numbers-partitioned
+  (filter-stream #(>= (count %) 2)
+                 (partition-stream
+                   (fn [prev curr] (= (cube-weight prev)
+                                      (cube-weight curr)))
+                   (pairs cube-weight integers integers))))
+
+(comment
+  (->> (range 10)
+       (map (fn [x]
+              (let [rams (ref-stream ram-numbers-partitioned x)]
+                [(map cube-weight rams) rams])))))
 
 ; 3.81
+(defn list-stream [ss]
+  (if (nil? (seq ss))
+    '()
+    (cons-stream
+      (first ss)
+      (list-stream (rest ss)))))
 
-; 3.82
+(defn rand-stream [as]
+  (let [[action arg] (car-stream as)
+        f-or-v (rand action)
+        res (if arg (f-or-v arg) f-or-v)]
+    (cons-stream
+      res
+      (rand-stream (cdr-stream as)))))
 
+(comment
+  (let [reqs ['(generate) '(generate) '(reset 1) '(generate) '(generate)]
+        res-stream (->> reqs
+                        list-stream
+                        rand-stream)]
+    (map #(ref-stream res-stream %) (range (count reqs)))))
