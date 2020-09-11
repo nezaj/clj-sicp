@@ -1,6 +1,7 @@
 # Intellij
 .idea/
 clj-sicp.iml
+.nrepl-port
 
 # misc
 .DS_Store
