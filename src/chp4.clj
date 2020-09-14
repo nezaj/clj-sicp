@@ -1,4 +1,5 @@
-(ns chp4)
+(ns chp4
+  (:require [lisp-interperter :as li]))
 
 (defn my-map [f xs]
   (if (nil? (seq xs))
@@ -22,19 +23,7 @@
         (my-map-iter #(cons head %) tail)
         tail))))
 
-; 4.1
 
-; 4.2
-; 4.3
-; 4.4
-; 4.6
-; 4.7
-; 4.8
-; 4.9 (let's do one of these?)
-; 4.10 (seems like a fun thinking exercise)
-; 4.11
-; 4.12
-; 4.13
 ; 4.14
 ; 4.15
 ; 4.16

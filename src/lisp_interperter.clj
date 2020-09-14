@@ -46,18 +46,29 @@
 
 (defn env-create-root []
   (env-create {'+ + '- -
-               '* * '/ /}
+               '* * '/ /
+               '= =
+               'true? scheme-true?
+               'false? scheme-false?}
               nil))
 
 (defn env-define! [env k v]
   (swap! (env-data env) assoc k v))
 
-(defn lookup-variable-value [env sym]
+(defn env-unbind! [env k]
+  (swap! (env-data env) dissoc k))
+
+(defn find-env-for-sym [env sym]
   (if-not (env-exists? env)
-    (throw (Exception. (format "unbound variable: %s" sym)))
+    nil
     (if (env-sym-bound? env sym)
-      (env-sym-value env sym)
-      (lookup-variable-value (env-parent env) sym))))
+      env
+      (find-env-for-sym (env-parent env) sym))))
+
+(defn lookup-variable-value [env sym]
+  (if-let [env' (find-env-for-sym env sym)]
+    (env-sym-value env' sym)
+    (throw (Exception. (format "unbound variable: %s" sym)))))
 
 (comment
   (let [parent (env-create {'a "moop"} nil)
@@ -89,6 +100,46 @@
   (let [empty-env (env-create {} nil)]
     (println (eval-if-form empty-env '(if true 1 2)))
     (println (eval-if-form empty-env '(if false 1 2)))))
+
+;; ----
+;; Cond
+(def cond-exp-pairs second)
+(def cond-test-exp first)
+(def cond-body-exp second)
+(def cond-else-exp? (partial = 'else))
+(def cond-form? (partial tag-of? 'cond))
+
+(defn cond-form->if-form [exp]
+  (loop [pairs (reverse (cond-exp-pairs exp))
+         ret false]
+    (let [head (first pairs)]
+      (cond
+        (nil? head)
+        ret
+
+        (cond-else-exp? (cond-test-exp head))
+        (recur (rest pairs)
+               (cond-body-exp head))
+
+        :else
+        (recur (rest pairs)
+               (list 'if
+                      (cond-test-exp head)
+                      (cond-body-exp head)
+                      ret))))))
+
+(comment
+  (cond-form->if-form '(((foo? a) (a-answer)) ((foo? b) (b-answer))))
+  (cond-form->if-form '(((foo? a) (a-answer)) ((foo? b) (b-answer)) (else (else-answer)))))
+
+(defn eval-cond-form [env exp]
+  (scheme-eval env (cond-form->if-form exp)))
+
+(comment
+  (let [empty-env (env-create {} nil)]
+    (println (eval-cond-form empty-env '(cond ((true 1) (else 2)))))
+    (println (eval-cond-form empty-env '(cond ((false 1) (else 2)))))))
+
 
 ;; ----
 ;; Definition
@@ -168,6 +219,26 @@
     (println (scheme-eval env '(bar foo)))
     env))
 
+;; ----
+;; Unbind
+
+(def unbind? (partial tag-of? 'unbind!))
+(def unbind-var second)
+
+(defn eval-unbind [env exp]
+  (let [sym (unbind-var exp)
+        env' (find-env-for-sym env sym)]
+    (when env'
+      (env-unbind! env' (unbind-var exp))
+      true)))
+
+(comment
+  (let [env (env-create-root)]
+    (scheme-eval env '(define foo "moop"))
+    (println (scheme-eval env 'foo))
+    (println (scheme-eval env '(unbind! foo)))
+    (println (scheme-eval env 'foo))))
+
 ;; ------------
 ;; lambda
 
@@ -238,6 +309,44 @@
               (+ a 1))))
 
 ;; ------------
+;; and/or
+
+(defn and-form->if-form [clauses]
+  (let [head (first clauses)
+        tail (rest clauses)]
+    (list 'if
+          (list 'false? head)
+          false
+          (if (nil? (seq tail))
+            head
+            (and-form->if-form tail)))))
+
+(def and-form? (partial tag-of? 'and))
+(defn eval-and-form [env exp]
+  (scheme-eval env (and-form->if-form (rest exp))))
+
+(def or-form? (partial tag-of? 'or))
+
+(defn or-form->if-form [clauses]
+  (let [head (first clauses)
+        tail (rest clauses)]
+    (if (nil? head)
+      false
+      `(~(symbol "let") ((head# ~head))
+         (if head# head# ~(or-form->if-form tail))))))
+
+(defn eval-or-form [env exp]
+  (scheme-eval env (or-form->if-form (rest exp))))
+
+(comment
+  (do
+    (println (scheme-eval (env-create-root) '(and (= 1 2) 4)))
+    (println (scheme-eval (env-create-root) '(and (= 2 2) 4)))
+    (println (scheme-eval (env-create-root) '(or (= 1 2) 4)))
+    (println (scheme-eval (env-create-root) '(or 4 (= 2 3))))
+    (println (scheme-eval (env-create-root) '(or (= 1 2) (= 2 3))))))
+
+;; ------------
 ;; let
 
 (def let-form? (partial tag-of? 'let))
@@ -280,6 +389,30 @@
     (println (let-bodies exp))
     (scheme-eval (env-create-root) exp)))
 
+;; ------------
+;; let*
+(def let*-vars second)
+(def let*-bodies #(nth % 2))
+(def let*-form? (partial tag-of? 'let*))
+
+(defn let*-form->nested-let [exp]
+  (reduce (fn [acc var-def]
+            (list 'let (list var-def)
+                  acc))
+          (let*-bodies exp)
+          (reverse (let*-vars exp))))
+
+(defn eval-let* [env exp]
+  (scheme-eval env (let*-form->nested-let exp)))
+
+(comment
+  (println (scheme-eval (env-create-root)
+                        '(let* ((x 3) (y (+ x 2)) (z (+ x y 5)))
+                           (* x z)))))
+
+;; ------------
+;; scheme-eval
+
 (defn scheme-eval [env exp]
   (cond
     (self-evaluating? exp)
@@ -291,8 +424,20 @@
     (if-form? exp)
     (eval-if-form env exp)
 
+    (cond-form? exp)
+    (eval-cond-form env exp)
+
+    (and-form? exp)
+    (eval-and-form env exp)
+
+    (or-form? exp)
+    (eval-or-form env exp)
+
     (definition? exp)
     (eval-definition env exp)
+
+    (unbind? exp)
+    (eval-unbind env exp)
 
     (lambda? exp)
     (eval-lambda env exp)
@@ -302,6 +447,9 @@
 
     (let-form? exp)
     (eval-let env exp)
+
+    (let*-form? exp)
+    (eval-let* env exp)
 
     (application? exp)
     (eval-application env exp)
