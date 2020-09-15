@@ -367,9 +367,9 @@
   into a lambda invocation:
 
   ((lambda (a b)
-          (do (+ a b)
-              (* a b))) 1 2)
-  "
+           (do (+ a b)
+               (* a b)))
+   1 2)"
   [env exp]
   (let [var-names (let-var-names exp)
         var-values (let-var-values exp)
