@@ -23,21 +23,18 @@
         (my-map-iter #(cons head %) tail)
         tail))))
 
-
-; 4.14
-; 4.15
-; 4.16
-; 4.17
-; 4.18
-; 4.19
-; 4.20
 ; 4.21
-; 4.22
-; 4.23
-; 4.24?
-; 4.25
-; 4.26
-; 4.27
+;; fib with y combinator
+((fn [n]
+   ((fn [fib] (fib fib n))
+    (fn [fib k]
+      (condp = k
+        0 0
+        1 1
+        (+ (fib fib (- k 1))
+           (fib fib (- k 2)))))))
+ 10)
+
 ; 4.28
 ; 4.29
 ; 4.30
