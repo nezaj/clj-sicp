@@ -126,8 +126,13 @@
                      ret)))) false)))
 
 (comment
-  (cond-form->if-form '(cond (((foo? a) (a-answer)) ((foo? b) (b-answer)))))
-  (cond-form->if-form '(cond (((foo? a) (a-answer)) ((foo? b) (b-answer)) (else (else-answer))))))
+  (cond-form->if-form
+    '(cond (((foo? a) (a-answer))
+            ((foo? b) (b-answer)))))
+  (cond-form->if-form
+    '(cond (((foo? a) (a-answer))
+            ((foo? b) (b-answer))
+            (else (else-answer))))))
 
 (defn eval-cond-form [env exp]
   (scheme-eval env (cond-form->if-form exp)))
