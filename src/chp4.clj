@@ -1,5 +1,5 @@
 (ns chp4
-  (:require [lisp-interperter :as li]))
+  (:require [lisp-interpreter :as li]))
 
 (defn my-map [f xs]
   (if (nil? (seq xs))

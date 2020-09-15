@@ -1,4 +1,4 @@
-(ns lisp-interperter
+(ns lazy-interpreter
   (:require [clojure.pprint :as pprint]))
 
 (declare scheme-eval)
