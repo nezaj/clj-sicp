@@ -23,6 +23,9 @@
           (count ks))
   (into {} (map (fn [x y] [x y]) ks vs)))
 
+(defn tag-of? [tag exp]
+  (= tag (first exp)))
+
 ;; ----
 ;; Env
 
@@ -81,8 +84,6 @@
 ;; ----
 ;; If
 
-(defn tag-of? [tag exp]
-  (= tag (first exp)))
 (def if-form? (partial tag-of? 'if))
 (defn if-predicate [exp] (second exp))
 (defn if-consequent [exp] (nth exp 2))
@@ -103,6 +104,7 @@
 
 ;; ----
 ;; Cond
+
 (def cond-exp-pairs second)
 (def cond-test-exp first)
 (def cond-body-exp second)
@@ -110,27 +112,22 @@
 (def cond-form? (partial tag-of? 'cond))
 
 (defn cond-form->if-form [exp]
-  (loop [pairs (reverse (cond-exp-pairs exp))
-         ret false]
-    (let [head (first pairs)]
-      (cond
-        (nil? head)
-        ret
-
-        (cond-else-exp? (cond-test-exp head))
-        (recur (rest pairs)
-               (cond-body-exp head))
-
-        :else
-        (recur (rest pairs)
+  (->> (cond-exp-pairs exp)
+       reverse
+       (reduce
+         (fn [ret pair]
+           (let [test-exp (cond-test-exp pair)
+                 body-exp (cond-body-exp pair)]
+             (if (cond-else-exp? test-exp)
+               body-exp
                (list 'if
-                      (cond-test-exp head)
-                      (cond-body-exp head)
-                      ret))))))
+                     test-exp
+                     body-exp
+                     ret)))) false)))
 
 (comment
-  (cond-form->if-form '(((foo? a) (a-answer)) ((foo? b) (b-answer))))
-  (cond-form->if-form '(((foo? a) (a-answer)) ((foo? b) (b-answer)) (else (else-answer)))))
+  (cond-form->if-form '(cond (((foo? a) (a-answer)) ((foo? b) (b-answer)))))
+  (cond-form->if-form '(cond (((foo? a) (a-answer)) ((foo? b) (b-answer)) (else (else-answer))))))
 
 (defn eval-cond-form [env exp]
   (scheme-eval env (cond-form->if-form exp)))
@@ -391,6 +388,7 @@
 
 ;; ------------
 ;; let*
+
 (def let*-vars second)
 (def let*-bodies #(nth % 2))
 (def let*-form? (partial tag-of? 'let*))
