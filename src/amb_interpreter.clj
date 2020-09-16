@@ -47,13 +47,26 @@
 (defn env-create [data parent]
   {:data (atom data) :parent parent})
 
+(defn with-continuations [f]
+  (fn [succ-cb fail-cb & xs]
+    (succ-cb (apply f xs) fail-cb)))
+
 (defn env-create-root []
-  (env-create {'+ + '- -
-               '* * '/ /
-               '= =
-               'true? amb-true?
-               'false? amb-false?}
-              nil))
+  (let [prims (->> [['+ +]
+                    ['- -]
+                    ['* *]
+                    ['/ /]
+                    ['= =]
+                    ['true? amb-true?]
+                    ['false? amb-false?]
+                    ['cons cons]
+                    ['car first]
+                    ['cdr rest]
+                    ['not false?]
+                    ['null? nil?]]
+                   (map (fn [[sym f]] [sym (with-continuations f)]))
+                   (into {}))]
+    (env-create prims nil)))
 
 (defn env-define! [env k v]
   (swap! (env-data env) assoc k v))
@@ -68,18 +81,10 @@
       env
       (find-env-for-sym (env-parent env) sym))))
 
-(defn lookup-variable-value [env sym]
+(defn lookup-variable-value [env sym succ-cb fail-cb]
   (if-let [env' (find-env-for-sym env sym)]
-    (env-sym-value env' sym)
+    (succ-cb (env-sym-value env' sym) fail-cb)
     (throw (Exception. (format "unbound variable: %s" sym)))))
-
-(comment
-  (let [parent (env-create {'a "moop"} nil)
-        child (env-create {'b "lol"} parent)]
-    (println "Lookup b:" (lookup-variable-value child 'b))
-    (println "Lookup a:" (lookup-variable-value child 'a))
-    (println "Lookup c should fail\n---")
-    (lookup-variable-value child 'c)))
 
 ;; ----
 ;; If
@@ -89,18 +94,34 @@
 (defn if-consequent [exp] (nth exp 2))
 (defn if-alternative [exp] (nth exp 3))
 
-(defn eval-if-form [env exp]
+(defn eval-if-form [env exp succ-cb fail-cb]
   (let [predicate (if-predicate exp)
         consequent (if-consequent exp)
         alternative (if-alternative exp)]
-    (if (amb-true? (amb-eval env predicate))
-      (amb-eval env consequent)
-      (amb-eval env alternative))))
+    (amb-eval env predicate
+              (fn [evaled-p fail-cb2]
+                 (if (amb-true? evaled-p)
+                   (amb-eval env consequent succ-cb fail-cb2)
+                   (amb-eval env alternative succ-cb fail-cb2)))
+              fail-cb)))
 
-(comment
-  (let [empty-env (env-create {} nil)]
-    (println (eval-if-form empty-env '(if true 1 2)))
-    (println (eval-if-form empty-env '(if false 1 2)))))
+;; ----
+;; amb
+
+(def amb-form? (partial tag-of? 'amb))
+(def amb-options rest)
+
+(defn eval-amb-form [env exp succ-cb fail-cb]
+  (letfn [(try-next [opts]
+            (let [next-opt (first opts)]
+              (if-not next-opt
+                (fail-cb)
+                (amb-eval
+                  env
+                  next-opt
+                  succ-cb
+                  (fn [] (try-next (rest opts)))))))]
+    (try-next (amb-options exp))))
 
 ;; ----
 ;; Cond
@@ -135,13 +156,8 @@
             ((foo? b) (b-answer))
             (else (else-answer))))))
 
-(defn eval-cond-form [env exp]
-  (amb-eval env (cond-form->if-form exp)))
-
-(comment
-  (let [empty-env (env-create {} nil)]
-    (println (eval-cond-form empty-env '(cond ((true 1) (else 2)))))
-    (println (eval-cond-form empty-env '(cond ((false 1) (else 2)))))))
+(defn eval-cond-form [env exp succ-cb fail-cb]
+  (amb-eval env (cond-form->if-form exp) succ-cb fail-cb))
 
 
 ;; ----
@@ -156,14 +172,17 @@
     (assert (variable? v) (format "Expected %s to be a variable" v))
     v))
 
-(defn eval-definition-variable [env exp]
+(defn eval-definition-variable [env exp succ-cb fail-cb]
   (let [variable (definition-variable exp)
         val-exp (definition-val exp)]
-    (env-define!
-      env
-      variable
-      (amb-eval env val-exp))
-    variable))
+    (amb-eval
+      env val-exp
+      (fn [evaled-v fail-cb2]
+        (env-define! env variable evaled-v)
+        (succ-cb
+          variable
+          fail-cb2))
+      fail-cb)))
 
 (comment
   (let [exp '(define foo 1)]
@@ -184,12 +203,14 @@
     (println (fn-definition-args exp))
     (println (definition-val exp))))
 
-(defn eval-definition-fn [env exp]
+(defn eval-definition-fn [env exp succ-cb fail-cb]
   (amb-eval
     env
     (list 'define
           (fn-definition-variable exp)
-          (list 'lambda (fn-definition-args exp) (definition-val exp)))))
+          (list 'lambda (fn-definition-args exp) (definition-val exp)))
+    succ-cb
+    fail-cb))
 
 (defn eval-definition
   "We support the following function definitions:
@@ -204,23 +225,16 @@
   Equivalent too:
   (define foo (lambda (a) (+ a b)))
   "
-  [env exp]
+  [env exp succ-cb fail-cb]
   (cond
     (fn-definition? exp)
-    (eval-definition-fn env exp)
+    (eval-definition-fn env exp succ-cb fail-cb)
 
     (variable-definition? exp)
-    (eval-definition-variable env exp)
+    (eval-definition-variable env exp succ-cb fail-cb)
 
     :else
     (throw (Exception. (format "Unexpected define: %s" exp)))))
-
-(comment
-  (let [env (env-create-root)]
-    (println (eval-definition env '(define foo 1)))
-    (println (eval-definition env '(define (bar a) (+ a 1))))
-    (println (amb-eval env '(bar foo)))
-    env))
 
 ;; ----
 ;; Unbind
@@ -228,19 +242,14 @@
 (def unbind? (partial tag-of? 'unbind!))
 (def unbind-var second)
 
-(defn eval-unbind [env exp]
+(defn eval-unbind [env exp succ-cb fail-cb]
   (let [sym (unbind-var exp)
         env' (find-env-for-sym env sym)]
-    (when env'
-      (env-unbind! env' (unbind-var exp))
-      true)))
-
-(comment
-  (let [env (env-create-root)]
-    (amb-eval env '(define foo "moop"))
-    (println (amb-eval env 'foo))
-    (println (amb-eval env '(unbind! foo)))
-    (println (amb-eval env 'foo))))
+    (succ-cb
+      (when env'
+        (env-unbind! env' (unbind-var exp))
+        true)
+      fail-cb)))
 
 ;; ------------
 ;; lambda
@@ -253,23 +262,46 @@
     syms))
 
 (def lambda-body #(nth % 2))
-(comment
-  (let [exp '(lambda (a b) (+ a b))]
-    (println (lambda? exp))
-    (println (lambda-vars exp))
-    (println (lambda-body exp))))
 
-(defn eval-lambda [env exp]
+(defn eval-lambda [env exp succ-cb fail-cb]
   (let [vars (lambda-vars exp)
         body (lambda-body exp)]
-    (fn [& xs]
-      (let [fn-env (env-create (zip-kv vars xs) env)]
-        (amb-eval fn-env body)))))
+    (succ-cb
+      (fn [succ-cb fail-cb & xs]
+        (let [fn-env (env-create (zip-kv vars xs) env)]
+          (amb-eval fn-env body succ-cb fail-cb)))
+      fail-cb)))
 
-(comment
-  (amb-eval
-    (env-create-root)
-    '((lambda (a b) (+ a b)) 1 2)))
+;; ------------
+;; do
+
+(def do-form? (partial tag-of? 'do))
+(def do-bodies rest)
+
+(defn eval-sequence
+  ([env forms succ-cb fail-cb]
+   (eval-sequence env forms succ-cb fail-cb []))
+  ([env forms succ-cb fail-cb evaled-forms]
+   (let [a (first forms)
+         next-forms (rest forms)]
+     (assert (seq forms) (format "Expected a to be a form. forms = %s" forms))
+     (amb-eval
+       env
+       a
+       (fn [evaled-a fail-cb2]
+         (let [evaled-forms' (into evaled-forms [evaled-a])]
+           (if (seq next-forms)
+             (eval-sequence env next-forms succ-cb fail-cb2 evaled-forms')
+             (succ-cb evaled-forms' fail-cb2))))
+       fail-cb))))
+
+(defn eval-do [env exp succ-cb fail-cb]
+  (eval-sequence
+    env
+    (do-bodies exp)
+    (fn [vs fail-cb2]
+      (succ-cb (last vs) fail-cb2)) fail-cb))
+
 
 ;; ------------
 ;; application
@@ -278,38 +310,18 @@
 (def application-operator first)
 (def application-operands rest)
 
-(comment
-  (let [exp '(+ 1 2)]
-    (println (application? exp))
-    (println (application-operator exp))
-    (println (application-operands exp))))
-
-(defn eval-application [env exp]
+(defn eval-application [env exp succ-cb fail-cb]
   (let [operator (application-operator exp)
         operands (application-operands exp)]
-    (apply
-      (amb-eval env operator)
-      (map (partial amb-eval env) operands))))
-
-(comment
-  (eval-application (env-create-root) '(+ 1 (* 2 2))))
-
-;; ------------
-;; do
-
-(def do-form? (partial tag-of? 'do))
-(def do-bodies rest)
-(defn eval-do [env exp]
-  (->> (do-bodies exp)
-       (map (partial amb-eval env))
-       doall
-       last))
-
-(comment
-  (eval-do (env-create-root)
-           '(do
-              (define a 1)
-              (+ a 1))))
+    (amb-eval
+      env
+      operator
+      (fn [evaled-operator fail-cb2]
+        (eval-sequence env operands
+                       (fn [evaled-operands fail-cb3]
+                         (apply evaled-operator (into [succ-cb fail-cb3] evaled-operands)))
+                       fail-cb2))
+      fail-cb)))
 
 ;; ------------
 ;; and/or
@@ -325,8 +337,8 @@
             (and-form->if-form tail)))))
 
 (def and-form? (partial tag-of? 'and))
-(defn eval-and-form [env exp]
-  (amb-eval env (and-form->if-form (rest exp))))
+(defn eval-and-form [env exp succ-cb fail-cb]
+  (amb-eval env (and-form->if-form (rest exp)) succ-cb fail-cb))
 
 (def or-form? (partial tag-of? 'or))
 
@@ -338,16 +350,8 @@
       `(~(symbol "let") ((head# ~head))
          (if head# head# ~(or-form->if-form tail))))))
 
-(defn eval-or-form [env exp]
-  (amb-eval env (or-form->if-form (rest exp))))
-
-(comment
-  (do
-    (println (amb-eval (env-create-root) '(and (= 1 2) 4)))
-    (println (amb-eval (env-create-root) '(and (= 2 2) 4)))
-    (println (amb-eval (env-create-root) '(or (= 1 2) 4)))
-    (println (amb-eval (env-create-root) '(or 4 (= 2 3))))
-    (println (amb-eval (env-create-root) '(or (= 1 2) (= 2 3))))))
+(defn eval-or-form [env exp succ-cb fail-cb]
+  (amb-eval env (or-form->if-form (rest exp)) succ-cb fail-cb))
 
 ;; ------------
 ;; let
@@ -371,26 +375,23 @@
            (do (+ a b)
                (* a b)))
    1 2)"
-  [env exp]
+  [env exp succ-cb fail-cb]
   (let [var-names (let-var-names exp)
         var-values (let-var-values exp)
         bodies (let-bodies exp)]
-    (amb-eval
+    (eval-sequence
       env
-      (cons (list 'lambda
-                  var-names
-                  (cons 'do bodies))
-            (map (partial amb-eval env) var-values)))))
-(comment
-  (let [exp '(let ((a 1)
-                   (b 1))
-               (define x (+ a b))
-               (+ x 1))]
-    (println (let-form? exp))
-    (println (let-var-names exp))
-    (println (let-var-values exp))
-    (println (let-bodies exp))
-    (amb-eval (env-create-root) exp)))
+      var-values
+      (fn [evaled-vals fail-cb2]
+        (amb-eval
+          env
+          (cons (list 'lambda
+                      var-names
+                      (cons 'do bodies))
+                evaled-vals)
+          succ-cb
+          fail-cb2))
+      fail-cb)))
 
 ;; ------------
 ;; let*
@@ -406,63 +407,58 @@
           (let*-bodies exp)
           (reverse (let*-vars exp))))
 
-(defn eval-let* [env exp]
-  (amb-eval env (let*-form->nested-let exp)))
-
-(comment
-  (println (amb-eval (env-create-root)
-                        '(let* ((x 3) (y (+ x 2)) (z (+ x y 5)))
-                           (* x z)))))
+(defn eval-let* [env exp succ-cb fail-cb]
+  (amb-eval env (let*-form->nested-let exp) succ-cb fail-cb))
 
 ;; ------------
 ;; amb-eval
 
-(defn amb-eval [env exp]
+(defn amb-eval [env exp succ-cb fail-cb]
   (cond
     (self-evaluating? exp)
-    exp
+    (succ-cb exp fail-cb)
 
     (variable? exp)
-    (lookup-variable-value env exp)
+    (lookup-variable-value env exp succ-cb fail-cb)
 
     (if-form? exp)
-    (eval-if-form env exp)
+    (eval-if-form env exp succ-cb fail-cb)
+
+    (amb-form? exp)
+    (eval-amb-form env exp succ-cb fail-cb)
 
     (cond-form? exp)
-    (eval-cond-form env exp)
+    (eval-cond-form env exp succ-cb fail-cb)
 
     (and-form? exp)
-    (eval-and-form env exp)
+    (eval-and-form env exp succ-cb fail-cb)
 
     (or-form? exp)
-    (eval-or-form env exp)
+    (eval-or-form env exp succ-cb fail-cb)
 
     (definition? exp)
-    (eval-definition env exp)
+    (eval-definition env exp succ-cb fail-cb)
 
     (unbind? exp)
-    (eval-unbind env exp)
+    (eval-unbind env exp succ-cb fail-cb)
 
     (lambda? exp)
-    (eval-lambda env exp)
+    (eval-lambda env exp succ-cb fail-cb)
 
     (do-form? exp)
-    (eval-do env exp)
+    (eval-do env exp succ-cb fail-cb)
 
     (let-form? exp)
-    (eval-let env exp)
+    (eval-let env exp succ-cb fail-cb)
 
     (let*-form? exp)
-    (eval-let* env exp)
+    (eval-let* env exp succ-cb fail-cb)
 
     (application? exp)
-    (eval-application env exp)
+    (eval-application env exp succ-cb fail-cb)
 
     :else
     "Not supported"))
-
-(defn exit? [s]
-  (= s 'exit))
 
 (defn repl-loop
   ([] (repl-loop (env-create-root)))
@@ -472,22 +468,54 @@
               "Type 'exit' to quit"
               "\n"
               "🔥 >"))
-   (loop []
-     (let [form (read-string (read-line))]
-       (if (exit? form)
-         (println "👋🏼 Goodbye")
-         (do
-           (pprint/pprint (amb-eval env form))
-           (recur)))))))
+   (letfn [(internal-loop [try-again]
+             (let [input (read-string (read-line))]
+               (condp = input
+                 'try-again (try-again)
+                 'exit nil
+                 (amb-eval
+                   env
+                   input
+                   (fn [val next-alternative]
+                     (println ">" val)
+                     (internal-loop next-alternative))
+                   (fn []
+                     (println "> No more values")
+                     (repl-loop))))))]
+     (internal-loop
+       (fn []
+         (println "Nothing to try")
+         (repl-loop env))))))
 
 (defn bootstrap-repl [forms]
   (let [env (env-create-root)]
-    (doseq [form forms] (amb-eval env form))
-    (repl-loop env)))
+    (eval-sequence
+      env
+      forms
+      (fn [_ fail-cb]
+        (repl-loop env))
+      (fn []
+        (println "couldn't bootstrap!")))))
 
 (comment
   (bootstrap-repl
-    ['(define x 1)
-     '(define y 1)
-     '(define f (lambda (a b) (* a b)))]))
+    '[(define xs (cons 1 (cons 2 (cons 3 ()))))
+      (define (require p)
+              (if (false? p)
+                (amb)
+                true))
+      (define (an-element-of items)
+              (do
+                (require (not (= items ())))
+                (amb (car items) (an-element-of (cdr items)))))
+      (an-element-of xs)]))
 
+
+(comment
+  (repl-loop))
+
+(comment
+  (do
+    (define xs (cons 1 (cons 2 (cons 3 ()))))
+    (define (require p) (if (false? p) (amb) true))
+    (define (an-element-of items) (do (require (not (= items ()))) (amb (car items) (an-element-of (cdr items)))))))
