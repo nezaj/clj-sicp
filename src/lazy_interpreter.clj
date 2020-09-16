@@ -3,6 +3,26 @@
 
 (declare scheme-eval)
 
+
+
+;; ---
+;; lazy
+
+(def thunk? delay?)
+
+(defn force-it [o]
+  (if (thunk? o)
+    @o
+    o))
+
+(defn actual-value [env exp]
+  (force-it (scheme-eval env exp)))
+
+(defn make-thunk [env exp]
+  (delay (actual-value env exp)))
+
+;; ---
+
 (def empty-list? (partial = ()))
 (defn self-evaluating? [exp]
   ((some-fn
@@ -47,13 +67,19 @@
 (defn env-create [data parent]
   {:data (atom data) :parent parent})
 
+(defn with-forced-args [f]
+  (fn [& args]
+    (apply f (map force-it args))))
+
 (defn env-create-root []
-  (env-create {'+ + '- -
-               '* * '/ /
-               '= =
-               'true? scheme-true?
-               'false? scheme-false?}
-              nil))
+  (let [prims (->> [['+ +] ['- -]
+                    ['* *] ['/ /]
+                    ['= =]
+                    ['true? scheme-true?] ['false? scheme-false?]
+                    ['force-it force-it]]
+                   (map (fn [[sym f]] [sym (with-forced-args f)]))
+                   (into {}))]
+    (env-create prims nil)))
 
 (defn env-define! [env k v]
   (swap! (env-data env) assoc k v))
@@ -93,7 +119,7 @@
   (let [predicate (if-predicate exp)
         consequent (if-consequent exp)
         alternative (if-alternative exp)]
-    (if (scheme-true? (scheme-eval env predicate))
+    (if (scheme-true? (actual-value env predicate))
       (scheme-eval env consequent)
       (scheme-eval env alternative))))
 
@@ -288,8 +314,8 @@
   (let [operator (application-operator exp)
         operands (application-operands exp)]
     (apply
-      (scheme-eval env operator)
-      (map (partial scheme-eval env) operands))))
+      (actual-value env operator)
+      (map (partial make-thunk env) operands))))
 
 (comment
   (eval-application (env-create-root) '(+ 1 (* 2 2))))
