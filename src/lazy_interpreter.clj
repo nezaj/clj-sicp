@@ -1,7 +1,7 @@
 (ns lazy-interpreter
   (:require [clojure.pprint :as pprint]))
 
-(declare scheme-eval)
+(declare lazy-eval)
 
 
 
@@ -16,7 +16,7 @@
     o))
 
 (defn actual-value [env exp]
-  (force-it (scheme-eval env exp)))
+  (force-it (lazy-eval env exp)))
 
 (defn make-thunk [env exp]
   (delay (actual-value env exp)))
@@ -120,8 +120,8 @@
         consequent (if-consequent exp)
         alternative (if-alternative exp)]
     (if (scheme-true? (actual-value env predicate))
-      (scheme-eval env consequent)
-      (scheme-eval env alternative))))
+      (lazy-eval env consequent)
+      (lazy-eval env alternative))))
 
 (comment
   (let [empty-env (env-create {} nil)]
@@ -162,7 +162,7 @@
             (else (else-answer))))))
 
 (defn eval-cond-form [env exp]
-  (scheme-eval env (cond-form->if-form exp)))
+  (lazy-eval env (cond-form->if-form exp)))
 
 (comment
   (let [empty-env (env-create {} nil)]
@@ -188,7 +188,7 @@
     (env-define!
       env
       variable
-      (scheme-eval env val-exp))
+      (lazy-eval env val-exp))
     variable))
 
 (comment
@@ -211,7 +211,7 @@
     (println (definition-val exp))))
 
 (defn eval-definition-fn [env exp]
-  (scheme-eval
+  (lazy-eval
     env
     (list 'define
           (fn-definition-variable exp)
@@ -245,7 +245,7 @@
   (let [env (env-create-root)]
     (println (eval-definition env '(define foo 1)))
     (println (eval-definition env '(define (bar a) (+ a 1))))
-    (println (scheme-eval env '(bar foo)))
+    (println (lazy-eval env '(bar foo)))
     env))
 
 ;; ----
@@ -263,10 +263,10 @@
 
 (comment
   (let [env (env-create-root)]
-    (scheme-eval env '(define foo "moop"))
-    (println (scheme-eval env 'foo))
-    (println (scheme-eval env '(unbind! foo)))
-    (println (scheme-eval env 'foo))))
+    (lazy-eval env '(define foo "moop"))
+    (println (lazy-eval env 'foo))
+    (println (lazy-eval env '(unbind! foo)))
+    (println (lazy-eval env 'foo))))
 
 ;; ------------
 ;; lambda
@@ -290,10 +290,10 @@
         body (lambda-body exp)]
     (fn [& xs]
       (let [fn-env (env-create (zip-kv vars xs) env)]
-        (scheme-eval fn-env body)))))
+        (lazy-eval fn-env body)))))
 
 (comment
-  (scheme-eval
+  (lazy-eval
     (env-create-root)
     '((lambda (a b) (+ a b)) 1 2)))
 
@@ -327,7 +327,7 @@
 (def do-bodies rest)
 (defn eval-do [env exp]
   (->> (do-bodies exp)
-       (map (partial scheme-eval env))
+       (map (partial lazy-eval env))
        doall
        last))
 
@@ -352,7 +352,7 @@
 
 (def and-form? (partial tag-of? 'and))
 (defn eval-and-form [env exp]
-  (scheme-eval env (and-form->if-form (rest exp))))
+  (lazy-eval env (and-form->if-form (rest exp))))
 
 (def or-form? (partial tag-of? 'or))
 
@@ -365,15 +365,15 @@
          (if head# head# ~(or-form->if-form tail))))))
 
 (defn eval-or-form [env exp]
-  (scheme-eval env (or-form->if-form (rest exp))))
+  (lazy-eval env (or-form->if-form (rest exp))))
 
 (comment
   (do
-    (println (scheme-eval (env-create-root) '(and (= 1 2) 4)))
-    (println (scheme-eval (env-create-root) '(and (= 2 2) 4)))
-    (println (scheme-eval (env-create-root) '(or (= 1 2) 4)))
-    (println (scheme-eval (env-create-root) '(or 4 (= 2 3))))
-    (println (scheme-eval (env-create-root) '(or (= 1 2) (= 2 3))))))
+    (println (lazy-eval (env-create-root) '(and (= 1 2) 4)))
+    (println (lazy-eval (env-create-root) '(and (= 2 2) 4)))
+    (println (lazy-eval (env-create-root) '(or (= 1 2) 4)))
+    (println (lazy-eval (env-create-root) '(or 4 (= 2 3))))
+    (println (lazy-eval (env-create-root) '(or (= 1 2) (= 2 3))))))
 
 ;; ------------
 ;; let
@@ -401,12 +401,12 @@
   (let [var-names (let-var-names exp)
         var-values (let-var-values exp)
         bodies (let-bodies exp)]
-    (scheme-eval
+    (lazy-eval
       env
       (cons (list 'lambda
                   var-names
                   (cons 'do bodies))
-            (map (partial scheme-eval env) var-values)))))
+            (map (partial lazy-eval env) var-values)))))
 (comment
   (let [exp '(let ((a 1)
                    (b 1))
@@ -416,7 +416,7 @@
     (println (let-var-names exp))
     (println (let-var-values exp))
     (println (let-bodies exp))
-    (scheme-eval (env-create-root) exp)))
+    (lazy-eval (env-create-root) exp)))
 
 ;; ------------
 ;; let*
@@ -433,17 +433,17 @@
           (reverse (let*-vars exp))))
 
 (defn eval-let* [env exp]
-  (scheme-eval env (let*-form->nested-let exp)))
+  (lazy-eval env (let*-form->nested-let exp)))
 
 (comment
-  (println (scheme-eval (env-create-root)
+  (println (lazy-eval (env-create-root)
                         '(let* ((x 3) (y (+ x 2)) (z (+ x y 5)))
                            (* x z)))))
 
 ;; ------------
-;; scheme-eval
+;; lazy-eval
 
-(defn scheme-eval [env exp]
+(defn lazy-eval [env exp]
   (cond
     (self-evaluating? exp)
     exp
@@ -503,12 +503,12 @@
        (if (exit? form)
          (println "👋🏼 Goodbye")
          (do
-           (pprint/pprint (scheme-eval env form))
+           (pprint/pprint (lazy-eval env form))
            (recur)))))))
 
 (defn bootstrap-repl [forms]
   (let [env (env-create-root)]
-    (doseq [form forms] (scheme-eval env form))
+    (doseq [form forms] (lazy-eval env form))
     (repl-loop env)))
 
 (comment
