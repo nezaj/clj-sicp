@@ -1,5 +1,5 @@
 (ns chp4
-  (:require [lisp-interpreter :as li]))
+  (:require [amb-interpreter :as amb-interpreter]))
 
 (defn my-map [f xs]
   (if (nil? (seq xs))
@@ -36,7 +36,18 @@
  10)
 
 ; 4.35
-; 4.36
-; 4.37
-; 4.46
-; 4.49
+(comment
+  (amb-interpreter/bootstrap-repl
+    ['(define (require p) (if (false? p) (amb) true))
+     '(define (an-integer-between a b)
+              (if (> a b)
+                (amb)
+                (amb
+                  a
+                  (an-integer-between (+ a 1) b))))
+     '(define (a-pythagorean-triple-between low high)
+              (let ((i (an-integer-between low high)))
+                (let ((j (an-integer-between i high)))
+                  (let ((k (sqrt (+ (* i i) (* j j)))))
+                    (require (= (floor k) k))
+                    (cons i (cons j (cons (int k) ())))))))]))
