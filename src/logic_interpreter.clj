@@ -68,11 +68,11 @@
 
 (comment
   (println
-    (pattern-match [:job '?x] [:job "hacker"] {}))
+    (pattern-match '[:job ?x] [:job "hacker"] {}))
   (println
-    (pattern-match [:job '?x] [:job "hacker"] {'?x "accountant"}))
+    (pattern-match '[:job ?x] [:job "hacker"] {'?x "accountant"}))
   (println
-    (pattern-match [:job '?x :l33t] [:job "hacker" :l33t] {})))
+    (pattern-match '[:job ?x :l33t] [:job "hacker" :l33t] {})))
 
 (defn search-assertions [db pattern frame]
   (keep #(pattern-match pattern % frame)
@@ -197,5 +197,5 @@
   (do
     (bootstrap db)
     (qeval db
-           [:job '?x ["computer" '?type]]
+           '[:job ?x ["computer" ?type]]
            [{}])))
