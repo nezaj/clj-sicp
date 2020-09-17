@@ -99,9 +99,9 @@
   (do
     (bootstrap db)
     (println (qeval db
-                    [:and
-                     [:job '?x ["computer" '?type]]
-                     [:address '?x ["Slumerville" '?addr '?num]]]
+                    '(and
+                       [:job ?x ["computer" ?type]]
+                       [:address ?x ["Slumerville" ?addr ?num]])
                     [{}]))))
 
 ;; or
@@ -114,9 +114,9 @@
   (do
     (bootstrap db)
     (qeval db
-           [:or
-            [:address '?x ["Boston" '?addr '?num]]
-            [:address '?x ["Slumerville" '?addr '?num]]]
+           '(or
+             [:address ?x ["Boston" ?addr ?num]]
+             [:address ?x ["Slumerville" ?addr ?num]])
            [{}])))
 
 ;; not
@@ -129,14 +129,15 @@
           frames
           queries))
 
-(do
-  (bootstrap db)
-  (qeval db
-         [:and
-          [:job '?x ["computer" '?type]]
-          [:not
-           [:address '?x ["Slumerville" '?addr '?num]]]]
-         [{}]))
+(comment
+  (do
+    (bootstrap db)
+    (qeval db
+           '(and
+              [:job ?x ["computer" ?type]]
+              (not
+                [:address ?x ["Slumerville" ?addr ?num]]))
+           [{}])))
 
 ;; lisp-value
 ;; ----------
@@ -168,26 +169,25 @@
   (do
     (bootstrap db)
     (qeval db
-           [:and
-            [:salary '?name '?amount]
-            [:lisp-value `> '?amount 50000]]
+           '(and
+             [:salary ?name ?amount]
+             (lisp-value > ?amount 50000))
            [{}])))
+
 ;; qeval
 ;; ----------
 
 (def query-type first)
 (def query-contents rest)
 
-(declare and-query or-query not-query)
-
 (defn simple-query [db query frames]
   (mapcat (partial search-assertions db query) frames))
 
 (defn qeval [db query frames]
-  (let [type->query-fn {:and and-query
-                        :or or-query
-                        :not not-query
-                        :lisp-value lisp-value-query}
+  (let [type->query-fn {'and and-query
+                        'or or-query
+                        'not not-query
+                        'lisp-value lisp-value-query}
         f (type->query-fn (query-type query))]
     (if f
       (f db (query-contents query) frames)
@@ -196,6 +196,6 @@
 (comment
   (do
     (bootstrap db)
-    (println (qeval db
-                    [:job '?x ["computer" '?type]]
-                    [{}]))))
+    (qeval db
+           [:job '?x ["computer" '?type]]
+           [{}])))
