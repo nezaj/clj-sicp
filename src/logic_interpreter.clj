@@ -402,6 +402,7 @@
 (defn exit? [s]
   (= s 'exit))
 
+(defn run-query [db query] (map #(actualize % query) (qeval db query [{}])))
 (defn repl-loop
   ([]
    (bootstrap db)
@@ -417,6 +418,5 @@
        (if (exit? query)
          (println "👋🏼 Goodbye")
          (do
-           (pprint/pprint
-             (map #(actualize % query) (qeval db query [{}])))
+           (pprint/pprint (run-query db query))
            (recur)))))))
