@@ -278,6 +278,35 @@
                 [:address ?x ["Slumerville" ?addr ?num]]))
            [{}])))
 
+;; unique
+;; ----------
+
+(defn unique-query [db queries frames]
+  (reduce (fn [filtered-frames query]
+            (->> filtered-frames
+                 (map #(qeval db query [%]))
+                 (filter #(= 1 (count %)))
+                 flatten))
+          frames
+          queries))
+
+(comment
+  (do
+    (bootstrap db)
+    [(qeval db
+            '(unique
+               [:job ?x ["computer" "wizard"]])
+            [{}])
+     (qeval db
+            '(unique
+               [:job ?x ["computer" ?who]])
+            [{}])
+     (qeval db
+            '(and [:job ?x ?j] (unique [:job ?anyone ?j]))
+            [{}])
+     ]))
+
+
 ;; lisp-value
 ;; ----------
 
@@ -328,7 +357,8 @@
   (let [type->query-fn {'and and-query
                         'or or-query
                         'not not-query
-                        'lisp-value lisp-value-query}
+                        'lisp-value lisp-value-query
+                        'unique unique-query}
         f (type->query-fn (query-type query))]
     (if f
       (f db (query-contents query) frames)
