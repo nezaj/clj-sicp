@@ -2,13 +2,18 @@
   (:require [logic-seed :as seed]
             [clojure.pprint :as pprint]))
 
-(def empty-db {:facts {} :rules {}})
-(defonce db (atom empty-db))
+
+; data
+; -----
+
+;; pattern
 
 (def pattern-kw first)
 (defn pattern-var? [x]
   (and (symbol? x)
        (= \? (first (name x)))))
+
+;; frame
 
 (def frame-contains? contains?)
 (def frame-value get)
@@ -23,20 +28,48 @@
 (def frame-extend assoc)
 
 ;; db
-; ---
+
+(def empty-db {:facts {} :rules {}})
+
+(defonce db (atom empty-db))
+
+;; rule
+
 (def rule-conclusion first)
 (def rule-body second)
 (def rule-kw (comp first rule-conclusion))
+
 (defn rule! [db rule]
   (swap! db update-in
          [:rules (rule-kw rule)]
          (partial into #{rule})))
+
+;; actualize
+
+(defn actualize [frame pat]
+  (cond
+    (pattern-var? pat)
+    (frame-value-rec frame pat)
+
+    (sequential? pat)
+    (mapv (partial actualize frame) pat)
+
+    :else pat))
+
+(comment
+  (actualize {'?x '?y
+              '?y "Joe"}
+             [:job '?x]))
+
+;; assertion
 
 (def fact-kw first)
 (defn assert! [db fact]
   (swap! db update-in
          [:facts (fact-kw fact)]
          (partial into #{fact})))
+
+;; boottrap
 
 (defn bootstrap [db]
   (reset! db empty-db)
@@ -46,6 +79,23 @@
     (rule! db rule)))
 
 (comment (bootstrap db))
+
+;; fetch assertions
+
+(defn all-assertions [db] (mapcat second (:facts @db)))
+(defn index-assertions [db key] (get (:facts @db) key #{}))
+(defn fetch-assertions [db pattern]
+  (if (keyword? (pattern-kw pattern))
+    (index-assertions db (pattern-kw pattern))
+    (all-assertions db)))
+
+(comment
+  (do
+    (bootstrap db)
+    [(fetch-assertions db [:job])
+     (fetch-assertions db [:moop])]))
+
+;; fetch rules
 
 (defn all-rules [db] (mapcat second (:rules @db)))
 (defn index-rules [db key] (get (:rules @db) key #{}))
@@ -65,31 +115,15 @@
                  (not [:same ?person-1 person-2])))
     (fetch-rules db [])))
 
-(defn all-assertions [db] (mapcat second (:facts @db)))
-(defn index-assertions [db key] (get (:facts @db) key #{}))
-(defn fetch-assertions [db pattern]
-  (if (keyword? (pattern-kw pattern))
-    (index-assertions db (pattern-kw pattern))
-    (all-assertions db)))
 
-(comment
-  (do
-    (bootstrap db)
-    [(fetch-assertions db [:job])
-     (fetch-assertions db [:moop])]))
+; search assertions
+; -----------------
+
+(declare qeval)
 
 (declare pattern-match)
-(defn search-assertions [db pattern frame]
-  (keep #(pattern-match pattern % frame)
-        (fetch-assertions db pattern)))
-
-(comment
-  (do
-    (bootstrap db)
-    (println (search-assertions db [:job '?x ["computer" '?type]] {}))))
 
 ;; pattern-match
-;; --------------
 
 (defn extend-if-consistent [sym fact frame]
   (if (frame-contains? frame sym)
@@ -118,10 +152,22 @@
   (println
     (pattern-match '[:job ?x :l33t] [:job "hacker" :l33t] {})))
 
-(declare qeval)
+;; search-assertions
 
-;; rules
-;; -------------
+(defn search-assertions [db pattern frame]
+  (keep #(pattern-match pattern % frame)
+        (fetch-assertions db pattern)))
+
+(comment
+  (do
+    (bootstrap db)
+    (println (search-assertions db [:job '?x ["computer" '?type]] {}))))
+
+
+; search rules
+; -------------
+
+;; rename variables
 
 (def application-id-counter (atom 0))
 (defn uniq [] (swap! application-id-counter inc))
@@ -140,39 +186,10 @@
                 exp))]
       (walk rule))))
 
-(comment
-  (rename-variables-in '[
-                         [:wheel ?person]
-                         (and [:supervisor ?middle-manager ?person]
-                              [:supervisor ?x ?middle-manager])]))
+;; unify match
 
 (declare unify-match)
-(defn apply-rule [db pattern rule frame]
-  (let [cleaned-rule (rename-variables-in rule)
-        unified-frame (unify-match pattern (rule-conclusion cleaned-rule) frame)]
-    (when unified-frame
-      (if (rule-body cleaned-rule)
-        (qeval db (rule-body cleaned-rule) [unified-frame])
-        [unified-frame]))))
 
-(defn search-rules [db pattern frame]
-  (mapcat #(apply-rule db pattern % frame) (fetch-rules db pattern)))
-
-(comment
-  (do
-    (bootstrap db)
-    (search-rules db '[:lives-near ?x ["Bitdiddle Ben"]] {})))
-
-(comment
-  (qeval
-    db
-    '(and [:address ["Bitdiddle Ben"] [?town ?addr-1 ?num-1]]
-          [:address ?person-2 [?town ?addr-2 ?num-2]]
-          (not [:same ["Bitdiddle Ben"] ?person-2]))
-    [{}]))
-
-;; unify-match
-;; --------------
 (defn depends-on? [frame pat sym]
   (cond
     (sequential? pat)
@@ -225,8 +242,35 @@
    (unify-match '[:x ?who] '[:x :x] {})
    (unify-match '[:x ?who] '[:x [:foo ?what]] {})])
 
+(comment
+  (rename-variables-in '[
+                         [:wheel ?person]
+                         (and [:supervisor ?middle-manager ?person]
+                              [:supervisor ?x ?middle-manager])]))
+
+;; search-rules
+
+(defn apply-rule [db pattern rule frame]
+  (let [cleaned-rule (rename-variables-in rule)
+        unified-frame (unify-match pattern (rule-conclusion cleaned-rule) frame)]
+    (when unified-frame
+      (if (rule-body cleaned-rule)
+        (qeval db (rule-body cleaned-rule) [unified-frame])
+        [unified-frame]))))
+
+(defn search-rules [db pattern frame]
+  (mapcat #(apply-rule db pattern % frame) (fetch-rules db pattern)))
+
+(comment
+  (do
+    (bootstrap db)
+    (search-rules db '[:lives-near ?x ["Bitdiddle Ben"]] {})))
+
+
+; compound queries
+; ---------------
+
 ;; and
-;; ----------
 
 (defn and-query [db queries frames]
   (reduce (fn [filtered-frames query]
@@ -244,7 +288,6 @@
                     [{}]))))
 
 ;; or
-;; ----------
 
 (defn or-query [db queries frames]
   (mapcat #(qeval db % frames) queries))
@@ -259,7 +302,6 @@
            [{}])))
 
 ;; not
-;; ----------
 
 (defn not-query [db queries frames]
   (reduce (fn [filtered-frames query]
@@ -279,7 +321,6 @@
            [{}])))
 
 ;; unique
-;; ----------
 
 (defn unique-query [db queries frames]
   (reduce (fn [filtered-frames query]
@@ -303,27 +344,11 @@
             [{}])
      (qeval db
             '(and [:job ?x ?j] (unique [:job ?anyone ?j]))
-            [{}])
-     ]))
+            [{}])]))
 
 
 ;; lisp-value
-;; ----------
 
-(defn actualize [frame pat]
-  (cond
-    (pattern-var? pat)
-    (frame-value-rec frame pat)
-
-    (sequential? pat)
-    (mapv (partial actualize frame) pat)
-
-    :else pat))
-
-(comment
-  (actualize {'?x '?y
-              '?y "Joe"}
-             [:job '?x]))
 
 (defn lisp-value-query [_db body frames]
   (let [f (eval (first body))
@@ -342,8 +367,8 @@
              (lisp-value > ?amount 50000))
            [{}])))
 
-;; qeval
-;; ----------
+; qeval
+; -----
 
 (def query-type first)
 (def query-contents rest)
@@ -371,8 +396,8 @@
            '[:job ?x ["computer" ?type]]
            [{}])))
 
-;; loop
-;; ----------
+; loop
+; ----
 
 (defn exit? [s]
   (= s 'exit))
