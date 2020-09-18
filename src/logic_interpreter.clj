@@ -106,13 +106,13 @@
 
 (comment
   (do
-    (rule! db '[:same ?x ?x])
-    (rule! db '[:lives-near ?person-1 ?person-2]
-           '(and [:address ?person-1
-                  [?town ?address-1 ?number-1]]
-                 [:address ?person-2
-                  [?town ?address-2 ?number-2]]
-                 (not [:same ?person-1 person-2])))
+    (rule! db '[[:same ?x ?x]])
+    (rule! db '[[:lives-near ?person-1 ?person-2]
+                (and [:address ?person-1
+                      [?town ?address-1 ?number-1]]
+                     [:address ?person-2
+                      [?town ?address-2 ?number-2]]
+                     (not [:same ?person-1 person-2]))])
     (fetch-rules db [])))
 
 
@@ -297,8 +297,8 @@
     (bootstrap db)
     (qeval db
            '(or
-             [:address ?x ["Boston" ?addr ?num]]
-             [:address ?x ["Slumerville" ?addr ?num]])
+              [:address ?x ["Boston" ?addr ?num]]
+              [:address ?x ["Slumerville" ?addr ?num]])
            [{}])))
 
 ;; not
@@ -363,8 +363,8 @@
     (bootstrap db)
     (qeval db
            '(and
-             [:salary ?name ?amount]
-             (lisp-value > ?amount 50000))
+              [:salary ?name ?amount]
+              (lisp-value > ?amount 50000))
            [{}])))
 
 ; qeval
