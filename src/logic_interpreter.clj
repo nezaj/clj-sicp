@@ -112,7 +112,7 @@
                       [?town ?address-1 ?number-1]]
                      [:address ?person-2
                       [?town ?address-2 ?number-2]]
-                     (not [:same ?person-1 person-2]))])
+                     (not [:same ?person-1 ?person-2]))])
     (fetch-rules db [])))
 
 
