@@ -52,3 +52,14 @@
    [:can-do-job ["computer" "programmer"] ["computer" "programmer" "trainee"]]
 
    [:can-do-job ["administration" "secretary"] ["administration" "big wheel"]]])
+
+(def rules
+  [
+   '[[:same ?x ?x]]
+
+   '[[:lives-near ?person-1 ?person-2]
+     (and [:address ?person-1
+           [?town ?address-1 ?number-1]]
+          [:address ?person-2
+           [?town ?address-2 ?number-2]]
+          (not [:same ?person-1 ?person-2]))]])
