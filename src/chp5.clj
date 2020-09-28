@@ -1,12 +1,43 @@
 (ns chp5)
 
 ;; Registers
-; 5.1
-; 5.2
-; 5.4
-; 5.5
-; 5.6
-; 5.7
+; 5.1 + 5.2
+'(controller
+  do
+    (test (op >) (reg counter) (reg n))
+    (branch (label done))
+    (assign product (op *) (reg product) (reg counter))
+    (assign counter (op +) (reg counter) (const 1))
+    (goto (label do))
+  done)
+
+; 5.4a
+'(controller
+    (assign continue (label exp-done))
+   exp-loop
+    (test (op =) (reg n) (const 0))
+    (branch (label base-case))
+    (save continue)
+    (assign n (op -) (reg n) (const 1))
+    (assign continue (label after-exp))
+    (goto (label exp-loop))
+   base-case
+    (assign res (const 1))
+    (goto (reg continue))
+   after-exp
+     (restore continue)
+     (assign (reg res) (op *) (reg res) (reg base))
+     (goto (reg continue))
+   exp-done)
+
+; 5.4b
+'(controller
+   do
+      (test (op =) (reg counter) (const 0))
+      (branch (label done))
+      (assign res (op *) (reg base) (reg res))
+      (assign counter (op -) (reg counter) (const 1))
+   done)
 
 ;; Simulator
 ; 5.8
