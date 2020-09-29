@@ -20,11 +20,11 @@
 
 (comment
   (->label+instruction '((assign)
-                            label-one
-                            (test)
-                            (branch)
-                            label-two
-                            (goto))))
+                         label-one
+                         (test)
+                         (branch)
+                         label-two
+                         (goto))))
 
 (defn make-instruction-sequence
   "Takes a list of raw instructions
@@ -42,10 +42,10 @@
      f are procedures, which transform a machine
   "
   [raw-instructions]
-  (map (fn [ins]
-         (into ins [(make-execution-proc
-                      (instruction-body ins))]))
-       (->label+instruction raw-instructions)))
+  (mapv (fn [ins]
+          (into ins [(make-execution-proc
+                       (instruction-body ins))]))
+        (->label+instruction raw-instructions)))
 
 (comment
   (make-instruction-sequence
@@ -236,9 +236,9 @@
 (comment
   (let [f (make-save-proc '(save foo))]
     (f {:registry-map {'foo 3}
-        :pc           0
-        :flag         false
-        :op-map       {'= =}
+        :pc 0
+        :flag false
+        :op-map {'= =}
         :instructions []
         :stack []})))
 
@@ -256,9 +256,9 @@
 (comment
   (let [f (make-restore-proc '(restore foo))]
     (f {:registry-map {'foo 3}
-        :pc           0
-        :flag         false
-        :op-map       {'= =}
+        :pc 0
+        :flag false
+        :op-map {'= =}
         :instructions []
         :stack [10]})))
 
@@ -270,9 +270,9 @@
 (comment
   (let [f (make-nil-proc)]
     (f {:registry-map {'foo 3}
-        :pc           0
-        :flag         false
-        :op-map       {'= =}
+        :pc 0
+        :flag false
+        :op-map {'= =}
         :instructions []
         :stack [10]})))
 
@@ -325,10 +325,10 @@
                :pc 0
                :flag nil
                :instructions (make-instruction-sequence raw-instructions)}]
-    (let [current-ins (nth (:instructions data) (:pc data) nil)]
-      (if-not current-ins
-        data
-        (recur ((instruction-fn current-ins) data))))))
+    (if-let [f (instruction-fn
+                 (nth (:instructions data) (:pc data) nil))]
+      (recur (f data))
+      data)))
 
 (def default-op-map {'* * '/ /
                      '> > '>= >=
