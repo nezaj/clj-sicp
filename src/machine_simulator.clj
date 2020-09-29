@@ -10,13 +10,14 @@
 (def body-tag first)
 
 (defn ->label+instruction [raw-instructions]
-  (reduce (fn [res part]
-            (if (symbol? part)
-              (conj res [part nil])
-              (let [last-label (instruction-label (last res))]
-                (conj res [last-label part]))))
-          []
-          raw-instructions))
+  (second
+    (reduce (fn [[sym res] part]
+              (if (symbol? part)
+                [part (conj res [part nil])]
+                [sym (conj res [sym part])]))
+            [nil []]
+            raw-instructions)))
+
 
 (comment
   (->label+instruction '((assign)
