@@ -30,7 +30,6 @@
 (def goto? (partial tag-of? 'goto))
 (def save? (partial tag-of? 'save))
 (def restore? (partial tag-of? 'restore))
-(def perform? (partial tag-of? 'perform))
 
 (def assign-reg-name
   "(assign foo ...)"
