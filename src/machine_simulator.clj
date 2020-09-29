@@ -48,7 +48,7 @@
       [[(assign foo (const 1)) f]
        [(goto (label label-one)) f]]
 
-     f are assemlbed procedures, that transform a machine
+     f are assembled procedures, that transform a machine
      based on the instructions
   "
   [raw-instructions]
