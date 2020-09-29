@@ -85,15 +85,22 @@
 
 (operation-exp? '(assign foo (op *) (const 1) (const 2)))
 
-(defn label-idx [transformed-instructions label]
-  (->> transformed-instructions
-       (map-indexed (fn [i x] [i (instruction-label x)]))
-       (filter (comp (partial = label) last))
-       ffirst))
+(def indexed (partial map-indexed vector))
+
+(defn positions [filter-fn coll]
+  (->> coll
+       indexed
+       (filter (fn [[_ v]] (filter-fn v)))
+       (map first)))
+
+(defn label-idx [label instructions]
+  (first (positions (comp (partial = label) instruction-label)
+                    instructions)))
 
 (comment
-  (label-idx '[[nil (assign)] [label-one nil] [label-two nil]]
-             'label-two))
+  (label-idx
+    'label-two
+    '[[nil (assign)] [label-one nil] [label-two nil]]))
 
 ; make expressions
 ; -------------
@@ -106,7 +113,7 @@
                 'reg
                 (get registry-map (second prim-exp))
                 'label
-                (label-idx instructions (second prim-exp)))]
+                (label-idx (second prim-exp) instructions))]
       res)))
 
 (comment
