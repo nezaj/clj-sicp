@@ -5,51 +5,59 @@
 ; build instructions
 ; -------------
 
-(def instruction-label first)
-(def instruction-body second)
+(def instruction-fn second)
 (def body-tag first)
 
-(defn ->label+instruction [raw-instructions]
-  (second
-    (reduce (fn [[sym res] part]
-              (if (symbol? part)
-                [part (conj res [part nil])]
-                [sym (conj res [sym part])]))
-            [nil []]
-            raw-instructions)))
-
+(defn extract-labels [raw-instructions]
+  (rest (reduce
+          (fn [[idx label->idx instructions] part]
+            (if (symbol? part)
+              [idx
+               (assoc label->idx part (inc idx))
+               instructions]
+              [(inc idx)
+               label->idx
+               (conj instructions part)]))
+          [-1 {} []]
+          raw-instructions)))
 
 (comment
-  (->label+instruction '((assign)
-                         label-one
-                         (test)
-                         (branch)
-                         label-two
-                         (goto))))
+  (let [[label->idx instructions]
+        (extract-labels '((assign foo (const 1))
+                          label-one
+                          (test (op =) (const 1) (reg foo))
+                          (branch (label label-two))
+                          label-two
+                          (assign bar (const 2))))]
+    (println label->idx)
+    (println (map-indexed vector instructions))))
 
-(defn make-instruction-sequence
+(defn assemble-instructions
   "Takes a list of raw instructions
   '(label-one
     (assign foo (const 1))
     (goto label-one))
 
-    and transforms them into assembled instruction tuples:
+    and returns two things:
+    a. label->idx : a map of labels to their corresponding
+      index in the instruction list
 
-    '(
-      [label-one (assign foo (const 1)) f]
-      [label-one (goto label-one) f]
-     )
+      {'label-one 0}
 
-     f are procedures, which transform a machine
+    b. instruction tuples
+      [[(assign foo (const 1)) f]
+       [(goto (label label-one)) f]]
+
+     f are assemlbed procedures, that transform a machine
+     based on the instructions
   "
   [raw-instructions]
-  (mapv (fn [ins]
-          (into ins [(make-execution-proc
-                       (instruction-body ins))]))
-        (->label+instruction raw-instructions)))
+  (let [[label->idx instructions] (extract-labels raw-instructions)]
+    [label->idx
+     (mapv (fn [body] [body (make-execution-proc body)]) instructions)]))
 
 (comment
-  (make-instruction-sequence
+  (assemble-instructions
     '((assign foo (const 1))
       label-one
       (test (op =) (const 1) (reg foo))
@@ -85,35 +93,18 @@
 
 (operation-exp? '(assign foo (op *) (const 1) (const 2)))
 
-(def indexed (partial map-indexed vector))
-
-(defn positions [filter-fn coll]
-  (->> coll
-       indexed
-       (filter (fn [[_ v]] (filter-fn v)))
-       (map first)))
-
-(defn label-idx [label instructions]
-  (first (positions (comp (partial = label) instruction-label)
-                    instructions)))
-
-(comment
-  (label-idx
-    'label-two
-    '[[nil (assign)] [label-one nil] [label-two nil]]))
-
 ; make expressions
 ; -------------
 
 (defn make-primitive-exp [prim-exp]
-  (fn [{:keys [registry-map instructions] :as data}]
+  (fn [{:keys [registry-map label->idx] :as data}]
     (let [res (condp tag-of? prim-exp
                 'const
                 (second prim-exp)
                 'reg
                 (get registry-map (second prim-exp))
                 'label
-                (label-idx (second prim-exp) instructions))]
+                (label->idx (second prim-exp)))]
       res)))
 
 (comment
@@ -270,19 +261,6 @@
         :instructions []
         :stack [10]})))
 
-; nil
-; -------------
-(defn make-nil-proc []
-  (fn [data] (update data :pc inc)))
-
-(comment
-  (let [f (make-nil-proc)]
-    (f {:registry-map {'foo 3}
-        :pc 0
-        :flag false
-        :op-map {'= =}
-        :instructions []
-        :stack [10]})))
 
 ; analyze
 ; -------------
@@ -314,9 +292,6 @@
     (restore? body)
     (make-restore-proc body)
 
-    (nil? body)
-    (make-nil-proc)
-
     :else
     (throw (Exception. (format "Unsupported instruction label %s" body)))))
 
@@ -324,19 +299,20 @@
 ; run
 ; -------------
 
-(def instruction-fn #(nth % 2))
-
 (defn run [registry-map op-map raw-instructions]
-  (loop [data {:registry-map registry-map
-               :op-map op-map
-               :stack []
-               :pc 0
-               :flag nil
-               :instructions (make-instruction-sequence raw-instructions)}]
-    (if-let [f (instruction-fn
-                 (nth (:instructions data) (:pc data) nil))]
-      (recur (f data))
-      data)))
+  (let [[label->idx instructions] (assemble-instructions raw-instructions)
+        initial-data {:registry-map registry-map
+                      :op-map op-map
+                      :stack []
+                      :pc 0
+                      :flag nil
+                      :label->idx label->idx
+                      :instructions instructions}]
+    (loop [data initial-data]
+      (if-let [f (instruction-fn
+                   (nth (:instructions data) (:pc data) nil))]
+        (recur (f data))
+        data))))
 
 (def default-op-map {'* * '/ /
                      '> > '>= >=
@@ -344,16 +320,16 @@
                      '+ + '- -
                      '= =})
 (comment
-  (:registry-map (run
-                   {'res 1 'counter 3 'base 10}
-                   default-op-map
-                   '(
-                      loop
+  (run
+    {'res 1 'counter 3 'base 10}
+    default-op-map
+    '(
+       loop
 
-                      (test (op =) (reg counter) (const 0))
-                      (branch (label done))
-                      (assign res (op *) (reg base) (reg res))
-                      (assign counter (op -) (reg counter) (const 1))
-                      (goto (label loop))
+       (test (op =) (reg counter) (const 0))
+       (branch (label done))
+       (assign res (op *) (reg base) (reg res))
+       (assign counter (op -) (reg counter) (const 1))
+       (goto (label loop))
 
-                      done))))
+       done)))
