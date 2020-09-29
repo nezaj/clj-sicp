@@ -1,35 +1,64 @@
 (ns machine-simulator)
 
+(declare make-execution-proc)
+
+; build instructions
+; -------------
+
 (def instruction-label first)
 (def instruction-body second)
 (def body-tag first)
 
-(defn transform-instructions [instructions]
+(defn ->label+instruction [raw-instructions]
   (reduce (fn [res part]
             (if (symbol? part)
               (conj res [part nil])
               (let [last-label (instruction-label (last res))]
                 (conj res [last-label part]))))
           []
-          instructions))
+          raw-instructions))
 
 (comment
-  (transform-instructions '((assign)
+  (->label+instruction '((assign)
                             label-one
                             (test)
                             (branch)
                             label-two
                             (goto))))
 
-(declare make-execution-proc)
+(defn make-instruction-sequence
+  "Takes a list of raw instructions
+  '(label-one
+    (assign foo (const 1))
+    (goto label-one))
+
+    and transforms them into assembled instruction tuples:
+
+    '(
+      [label-one (assign foo (const 1)) f]
+      [label-one (goto label-one) f]
+     )
+
+     f are procedures, which transform a machine
+  "
+  [raw-instructions]
+  (map (fn [ins]
+         (into ins [(make-execution-proc
+                      (instruction-body ins))]))
+       (->label+instruction raw-instructions)))
+
+(comment
+  (make-instruction-sequence
+    '((assign foo (const 1))
+      label-one
+      (test (op =) (const 1) (reg foo))
+      (branch (label label-two))
+      label-two)))
 
 (defn tag-of? [sym body] (= sym (body-tag body)))
-(def assign? (partial tag-of? 'assign))
-(def test? (partial tag-of? 'test))
-(def branch? (partial tag-of? 'branch))
-(def goto? (partial tag-of? 'goto))
-(def save? (partial tag-of? 'save))
-(def restore? (partial tag-of? 'restore))
+
+; assign data model
+; -------------
 
 (def assign-reg-name
   "(assign foo ...)"
@@ -67,6 +96,7 @@
 
 ; make expressions
 ; -------------
+
 (defn make-primitive-exp [prim-exp]
   (fn [{:keys [registry-map instructions] :as data}]
     (let [res (condp tag-of? prim-exp
@@ -249,6 +279,13 @@
 ; analyze
 ; -------------
 
+(def assign? (partial tag-of? 'assign))
+(def test? (partial tag-of? 'test))
+(def branch? (partial tag-of? 'branch))
+(def goto? (partial tag-of? 'goto))
+(def save? (partial tag-of? 'save))
+(def restore? (partial tag-of? 'restore))
+
 (defn make-execution-proc [body]
   (cond
     (assign? body)
@@ -275,18 +312,9 @@
     :else
     (throw (Exception. (format "Unsupported instruction label %s" body)))))
 
-(defn make-instruction-sequence [s]
-  (->> (transform-instructions s)
-       (map (fn [ins]
-              (into ins [(make-execution-proc (instruction-body ins))])))))
 
-(comment
-  (make-instruction-sequence
-    '((assign foo (const 1))
-      label-one
-      (test (op =) (const 1) (reg foo))
-      (branch (label label-two))
-      label-two)))
+; run
+; -------------
 
 (def instruction-fn #(nth % 2))
 
@@ -308,14 +336,16 @@
                      '+ + '- -
                      '= =})
 (comment
-  (run
-    {'res 1 'counter 3 'base 10}
-    default-op-map
-    '(
-       do
-       (test (op =) (reg counter) (const 0))
-       (branch (label done))
-       (assign res (op *) (reg base) (reg res))
-       (assign counter (op -) (reg counter) (const 1))
-       (goto (label do))
-       done)))
+  (:registry-map (run
+                   {'res 1 'counter 3 'base 10}
+                   default-op-map
+                   '(
+                      loop
+
+                      (test (op =) (reg counter) (const 0))
+                      (branch (label done))
+                      (assign res (op *) (reg base) (reg res))
+                      (assign counter (op -) (reg counter) (const 1))
+                      (goto (label loop))
+
+                      done))))
