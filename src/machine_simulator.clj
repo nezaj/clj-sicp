@@ -96,7 +96,7 @@
 ; make expressions
 ; -------------
 
-(defn make-primitive-exp [prim-exp]
+(defn make-primitive-proc [prim-exp]
   (fn [{:keys [registry-map label->idx] :as data}]
     (let [res (condp tag-of? prim-exp
                 'const
@@ -125,9 +125,9 @@
 
 (def operation-sym (comp second first))
 (def operation-args rest)
-(defn make-operation-exp [value-exp]
+(defn make-operation-proc [value-exp]
   (let [op-sym (operation-sym value-exp)
-        op-arg-fns (map make-primitive-exp (operation-args value-exp))]
+        op-arg-fns (map make-primitive-proc (operation-args value-exp))]
     (fn [{:keys [op-map] :as data}]
       (let [op-fn (get op-map op-sym)
             evaled-args (map (fn [f] (f data)) op-arg-fns)]
@@ -145,8 +145,8 @@
 (defn make-assign-proc [body]
   (let [reg-name (assign-reg-name body)
         value-proc (if (operation-exp? body)
-                     (make-operation-exp (assign-operation-exp body))
-                     (make-primitive-exp (assign-primitive-exp body)))]
+                     (make-operation-proc (assign-operation-exp body))
+                     (make-primitive-proc (assign-primitive-exp body)))]
     (fn [data]
       (let [new-value (value-proc data)]
         (-> data
@@ -158,7 +158,7 @@
 ; test
 ; -------------
 (defn make-test-proc [body]
-  (let [condition-proc (make-operation-exp (test-condition body))]
+  (let [condition-proc (make-operation-proc (test-condition body))]
     (fn [data]
       (-> data
           (assoc :flag (condition-proc data))
@@ -180,7 +180,7 @@
 ; -------------
 (def branch-dest second)
 (defn make-branch-proc [body]
-  (let [dest-fn (make-primitive-exp (branch-dest body))]
+  (let [dest-fn (make-primitive-proc (branch-dest body))]
     (fn [data]
       (if (:flag data)
         (assoc data :pc (dest-fn data))
@@ -204,7 +204,7 @@
 ; -------------
 (def goto-dest second)
 (defn make-goto-proc [body]
-  (let [dest-fn (make-primitive-exp (goto-dest body))]
+  (let [dest-fn (make-primitive-proc (goto-dest body))]
     (fn [data] (assoc data :pc (dest-fn data)))))
 
 (comment
