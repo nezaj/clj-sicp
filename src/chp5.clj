@@ -39,24 +39,12 @@
       (assign counter (op -) (reg counter) (const 1))
    done)
 
-;; Simulator
-
-; 5.8
-; 5.15
-; 5.16
-; 5.17
-; 5.18
-; 5.19
-
 ;; Machine evaluator
-; 5.20
-; 5.21
-; 5.22
 ; 5.23
 ; 5.24
 ; 5.25
 ; 5.25
-; 5.26®
+; 5.26b
 ; 5.27
 ; 5.28
 ; 5.29
