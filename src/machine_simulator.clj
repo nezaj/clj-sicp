@@ -125,6 +125,7 @@
 
 (def operation-sym (comp second first))
 (def operation-args rest)
+
 (defn make-operation-proc [value-exp]
   (let [op-sym (operation-sym value-exp)
         op-arg-fns (map make-primitive-proc (operation-args value-exp))]
@@ -205,7 +206,8 @@
 (def goto-dest second)
 (defn make-goto-proc [body]
   (let [dest-fn (make-primitive-proc (goto-dest body))]
-    (fn [data] (assoc data :pc (dest-fn data)))))
+    (fn [data]
+      (assoc data :pc (dest-fn data)))))
 
 (comment
   (let [f (make-goto-proc '(goto (label foo)))]
@@ -261,7 +263,23 @@
         :instructions []
         :stack [10]})))
 
+; perform
+; -------------
+(def perform-operation-exp rest)
+(defn make-perform-proc [body]
+  (let [value-proc (make-operation-proc (perform-operation-exp body))]
+    (fn [data]
+      (value-proc data)
+      (update data :pc inc))))
 
+(comment
+  (let [f (make-perform-proc '(preform (op reset!) (reg foo) (const 1)))]
+    (f {:registry-map {'foo (atom nil)}
+        :pc 0
+        :flag false
+        :op-map {'reset! reset!}
+        :instructions []
+        :stack [10]})))
 ; analyze
 ; -------------
 
@@ -271,6 +289,7 @@
 (def goto? (partial tag-of? 'goto))
 (def save? (partial tag-of? 'save))
 (def restore? (partial tag-of? 'restore))
+(def perform? (partial tag-of? 'perform))
 
 (defn make-execution-proc [body]
   (cond
@@ -291,6 +310,9 @@
 
     (restore? body)
     (make-restore-proc body)
+
+    (perform? body)
+    (make-perform-proc body)
 
     :else
     (throw (Exception. (format "Unsupported instruction label %s" body)))))
