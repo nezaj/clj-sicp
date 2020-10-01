@@ -38,13 +38,3 @@
       (assign res (op *) (reg base) (reg res))
       (assign counter (op -) (reg counter) (const 1))
    done)
-
-;; Machine evaluator
-; 5.26
-
-;; Compilation
-; 5.31
-; 5.32b
-; 5.36
-; 5.45
-; 5.46

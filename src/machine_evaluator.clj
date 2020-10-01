@@ -57,6 +57,10 @@
                  ['* *]
                  ['/ /]
                  ['= =]
+                 ['> >]
+                 ['< <]
+                 ['>= >=]
+                 ['<= <=]
                  ['true? scheme-true?]
                  ['false? scheme-false?]]]
     (env-create (->> entries
@@ -146,15 +150,26 @@
    (-> (simulate-machine '((lambda (a) (+ a 1)) 1)) :registry-map)
    (-> (simulate-machine
          '((lambda (start)
+                  (define iter-fct
+                          (lambda (product counter)
+                                  (if (> counter start)
+                                    product
+                                    (iter-fct (* counter product)
+                                               (+ counter 1)))))
+                  (iter-fct 1 1))
+          20))
+       :registry-map)
+   (-> (simulate-machine
+         '((lambda (start)
                    (define fct
                            (lambda (n)
                                    (if (= n 1)
                                      n
                                      (* n (fct (- n 1))))))
                    (fct start))
-           5))
-       :registry-map
-       (dissoc :env))])
+           20))
+       :registry-map)])
+
 
 ;; op-map
 (def op-map
